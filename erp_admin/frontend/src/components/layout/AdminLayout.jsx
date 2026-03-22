@@ -43,7 +43,7 @@ function SidebarContent({ onClose }) {
           </div>
           <div>
             <p className="font-heading font-700 text-sm text-slate-900 leading-tight">AYRA ERP</p>
-            <p className="text-xs text-slate-400 font-medium">University Admin Portal</p>
+            <p className="text-xs text-slate-400 font-medium">University Portal</p>
           </div>
         </div>
         {onClose && (

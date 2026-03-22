@@ -1,4 +1,4 @@
-# AYRA Admin ERP — Admin Frontend
+# AYRA ERP — Admin Frontend
 
 A full-featured university ERP admin portal built with **React (Vite) + Tailwind CSS + Material UI (MUI)**.
 

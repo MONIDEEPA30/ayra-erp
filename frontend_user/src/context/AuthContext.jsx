@@ -9,7 +9,7 @@ const DEFAULT_ADMIN = {
   name: 'Admin',
   role: 'Administrator',
   email: 'admin@university.edu',
-  // avatar: null,
+  avatar: null,
 };
 
 export function AuthProvider({ children }) {

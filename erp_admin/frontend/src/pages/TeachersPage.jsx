@@ -1,26 +1,79 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Button, TextField, InputAdornment, Avatar, Chip, IconButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Tooltip, Pagination, Card, CardContent,
+  Tooltip, Pagination, FormControl, InputLabel, Select, MenuItem, CircularProgress, Alert,
 } from '@mui/material';
-import { Search, Add, Edit, Delete, Visibility, Download, School, Star } from '@mui/icons-material';
+import { Search, Add, Edit, Delete, Download, School, Star } from '@mui/icons-material';
+import api from '../utils/api';
+import { getInitials, stringToColor, debounce } from '../utils/helpers';
+import { DEPARTMENTS, FACULTY_DESIGNATIONS } from '../utils/constants';
+import FormDialog from '../components/common/FormDialog';
 
-const TEACHERS = [
-  { id: 'FAC001', name: 'Dr. Ramesh Kumar', dept: 'Computer Science', designation: 'Professor', email: 'r.kumar@uni.edu', subjects: ['DBMS', 'Algorithms'], exp: 14, students: 120, rating: 4.8, status: 'Active' },
-  { id: 'FAC002', name: 'Prof. Neha Verma', dept: 'Computer Science', designation: 'Asst. Professor', email: 'n.verma@uni.edu', subjects: ['OS', 'Networks'], exp: 7, students: 85, rating: 4.6, status: 'Active' },
-  { id: 'FAC003', name: 'Dr. Suresh Panda', dept: 'Electronics', designation: 'Associate Prof.', email: 's.panda@uni.edu', subjects: ['Digital Electronics', 'VLSI'], exp: 11, students: 95, rating: 4.5, status: 'Active' },
-  { id: 'FAC004', name: 'Dr. Anita Mishra', dept: 'Mathematics', designation: 'Professor', email: 'a.mishra@uni.edu', subjects: ['Calculus', 'Linear Algebra'], exp: 18, students: 200, rating: 4.9, status: 'Active' },
-  { id: 'FAC005', name: 'Mr. Vivek Rao', dept: 'Business Admin', designation: 'Lecturer', email: 'v.rao@uni.edu', subjects: ['Marketing', 'Management'], exp: 4, students: 75, rating: 4.2, status: 'On Leave' },
-  { id: 'FAC006', name: 'Dr. Priya Nair', dept: 'Physics', designation: 'Asst. Professor', email: 'p.nair@uni.edu', subjects: ['Quantum Physics', 'Optics'], exp: 9, students: 110, rating: 4.7, status: 'Active' },
-];
-
-const DEPT_COLORS = { 'Computer Science': '#4f46e5', 'Electronics': '#06b6d4', 'Mathematics': '#ef4444', 'Business Admin': '#10b981', 'Physics': '#8b5cf6' };
+const ITEMS_PER_PAGE = 10;
+const emptyForm = { name: '', email: '', phone: '', facultyId: '', department: '', designation: '', subjects: '', experienceYears: '', status: 'Active' };
 
 export default function TeachersPage() {
+  const [teachers, setTeachers] = useState([]);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const [stats, setStats] = useState({ total: 0, active: 0, onLeave: 0 });
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
-  const filtered = TEACHERS.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()) || t.dept.toLowerCase().includes(search.toLowerCase()));
+  const [dialog, setDialog] = useState({ open: false, mode: 'add', data: null });
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const fetchTeachers = useCallback(async (q = search, pg = page) => {
+    setLoading(true);
+    try {
+      const params = { page: pg, limit: ITEMS_PER_PAGE };
+      if (q) params.search = q;
+      const { data } = await api.get('/teachers', { params });
+      setTeachers(data.data.teachers);
+      setPagination(data.data.pagination);
+    } catch { setError('Failed to load teachers.'); }
+    finally { setLoading(false); }
+  }, []);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const { data } = await api.get('/teachers/stats');
+      setStats({ total: data.data.total, active: data.data.active, onLeave: data.data.onLeave });
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => { fetchTeachers(); fetchStats(); }, []);
+
+  const debouncedSearch = useCallback(debounce((val) => { setPage(1); fetchTeachers(val, 1); }, 400), []);
+  const handleSearch = (e) => { setSearch(e.target.value); debouncedSearch(e.target.value); };
+  const handlePage = (_, v) => { setPage(v); fetchTeachers(search, v); };
+
+  const openAdd = () => { setForm(emptyForm); setDialog({ open: true, mode: 'add', data: null }); };
+  const openEdit = (t) => {
+    setForm({ name: t.name, email: t.email, phone: t.phone || '', facultyId: t.facultyId, department: t.department, designation: t.designation, subjects: (t.subjects || []).join(', '), experienceYears: t.experienceYears || '', status: t.status });
+    setDialog({ open: true, mode: 'edit', data: t });
+  };
+  const closeDialog = () => { setDialog({ open: false, mode: 'add', data: null }); setError(''); };
+
+  const handleSave = async () => {
+    setSaving(true); setError('');
+    try {
+      const payload = { ...form, subjects: form.subjects.split(',').map((s) => s.trim()).filter(Boolean), experienceYears: Number(form.experienceYears) || 0 };
+      if (dialog.mode === 'add') await api.post('/teachers', payload);
+      else await api.put(`/teachers/${dialog.data._id}`, payload);
+      closeDialog(); fetchTeachers(); fetchStats();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to save teacher.');
+    } finally { setSaving(false); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this faculty member?')) return;
+    try { await api.delete(`/teachers/${id}`); fetchTeachers(); fetchStats(); }
+    catch { setError('Failed to delete teacher.'); }
+  };
 
   return (
     <div className="space-y-5">
@@ -31,17 +84,19 @@ export default function TeachersPage() {
         </div>
         <div className="flex gap-2.5">
           <Button variant="outlined" size="small" startIcon={<Download />} sx={{ borderColor: '#e2e8f0', color: '#475569' }}>Export</Button>
-          <Button variant="contained" size="small" startIcon={<Add />}>Add Faculty</Button>
+          <Button variant="contained" size="small" startIcon={<Add />} onClick={openAdd}>Add Faculty</Button>
         </div>
       </div>
+
+      {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
 
       {/* Summary cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: 'Total Faculty', value: '327', color: '#4f46e5', bg: '#eef2ff' },
-          { label: 'Professors', value: '84', color: '#10b981', bg: '#ecfdf5' },
-          { label: 'Asst. Professors', value: '143', color: '#06b6d4', bg: '#ecfeff' },
-          { label: 'On Leave', value: '12', color: '#f59e0b', bg: '#fffbeb' },
+          { label: 'Total Faculty', value: stats.total, color: '#4f46e5', bg: '#eef2ff' },
+          { label: 'Active', value: stats.active, color: '#10b981', bg: '#ecfdf5' },
+          { label: 'On Leave', value: stats.onLeave, color: '#f59e0b', bg: '#fffbeb' },
+          { label: 'Departments', value: DEPARTMENTS.length, color: '#06b6d4', bg: '#ecfeff' },
         ].map((c) => (
           <div key={c.label} className="stat-card animate-fadeInUp">
             <p className="font-heading text-2xl font-700" style={{ color: c.color }}>{c.value}</p>
@@ -52,14 +107,8 @@ export default function TeachersPage() {
 
       {/* Search */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-4 flex gap-3 animate-fadeInUp">
-        <TextField
-          placeholder="Search faculty by name or department..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          size="small"
-          sx={{ flex: 1 }}
-          InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 18, color: '#94a3b8' }} /></InputAdornment> }}
-        />
+        <TextField placeholder="Search faculty by name or department..." value={search} onChange={handleSearch} size="small" sx={{ flex: 1 }}
+          InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 18, color: '#94a3b8' }} /></InputAdornment> }} />
       </div>
 
       {/* Table */}
@@ -74,51 +123,44 @@ export default function TeachersPage() {
                 <TableCell>Designation</TableCell>
                 <TableCell>Subjects</TableCell>
                 <TableCell>Experience</TableCell>
-                <TableCell>Rating</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell align="right">Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
-              {filtered.map((t) => (
-                <TableRow key={t.id} hover sx={{ '&:hover': { bgcolor: '#fafbff' } }}>
+              {loading ? (
+                <TableRow><TableCell colSpan={8} align="center" sx={{ py: 6 }}><CircularProgress size={28} /></TableCell></TableRow>
+              ) : teachers.length === 0 ? (
+                <TableRow><TableCell colSpan={8} align="center" sx={{ py: 6, color: '#94a3b8' }}>No faculty found</TableCell></TableRow>
+              ) : teachers.map((t) => (
+                <TableRow key={t._id} hover sx={{ '&:hover': { bgcolor: '#fafbff' } }}>
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <Avatar sx={{ width: 36, height: 36, bgcolor: DEPT_COLORS[t.dept] || '#4f46e5', fontSize: 13, fontWeight: 700 }}>
-                        {t.name.charAt(0)}
-                      </Avatar>
+                      <Avatar sx={{ width: 36, height: 36, bgcolor: stringToColor(t.name), fontSize: 13, fontWeight: 700 }}>{getInitials(t.name)}</Avatar>
                       <div>
                         <p className="font-semibold text-sm text-slate-800">{t.name}</p>
                         <p className="text-xs text-slate-400">{t.email}</p>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell><span className="font-mono text-xs font-medium text-slate-600 bg-slate-50 px-2 py-1 rounded">{t.id}</span></TableCell>
-                  <TableCell><span className="text-xs font-medium" style={{ color: DEPT_COLORS[t.dept] }}>{t.dept}</span></TableCell>
+                  <TableCell><span className="font-mono text-xs font-medium text-slate-600 bg-slate-50 px-2 py-1 rounded">{t.facultyId}</span></TableCell>
+                  <TableCell><span className="text-xs font-medium text-slate-700">{t.department}</span></TableCell>
                   <TableCell><span className="text-sm text-slate-700">{t.designation}</span></TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      {t.subjects.map((s) => (
+                      {(t.subjects || []).slice(0, 2).map((s) => (
                         <Chip key={s} label={s} size="small" sx={{ fontSize: '0.65rem', height: 20, bgcolor: '#f1f5f9', color: '#475569' }} />
                       ))}
                     </div>
                   </TableCell>
-                  <TableCell><span className="text-sm text-slate-700">{t.exp} yrs</span></TableCell>
+                  <TableCell><span className="text-sm text-slate-700">{t.experienceYears} yrs</span></TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-1">
-                      <Star sx={{ fontSize: 14, color: '#f59e0b' }} />
-                      <span className="text-sm font-semibold text-slate-800">{t.rating}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={t.status} size="small"
-                      sx={{ bgcolor: t.status === 'Active' ? '#eef2ff' : '#fffbeb', color: t.status === 'Active' ? '#4f46e5' : '#d97706', fontWeight: 600, fontSize: '0.7rem', height: 22 }} />
+                    <Chip label={t.status} size="small" sx={{ bgcolor: t.status === 'Active' ? '#eef2ff' : '#fffbeb', color: t.status === 'Active' ? '#4f46e5' : '#d97706', fontWeight: 600, fontSize: '0.7rem', height: 22 }} />
                   </TableCell>
                   <TableCell align="right">
                     <div className="flex items-center justify-end gap-1">
-                      <Tooltip title="View"><IconButton size="small"><Visibility sx={{ fontSize: 16, color: '#64748b' }} /></IconButton></Tooltip>
-                      <Tooltip title="Edit"><IconButton size="small"><Edit sx={{ fontSize: 16, color: '#64748b' }} /></IconButton></Tooltip>
-                      <Tooltip title="Delete"><IconButton size="small"><Delete sx={{ fontSize: 16, color: '#ef4444' }} /></IconButton></Tooltip>
+                      <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(t)}><Edit sx={{ fontSize: 16, color: '#64748b' }} /></IconButton></Tooltip>
+                      <Tooltip title="Delete"><IconButton size="small" onClick={() => handleDelete(t._id)}><Delete sx={{ fontSize: 16, color: '#ef4444' }} /></IconButton></Tooltip>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -127,10 +169,50 @@ export default function TeachersPage() {
           </Table>
         </TableContainer>
         <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-100">
-          <p className="text-xs text-slate-400">Showing {filtered.length} of {TEACHERS.length} faculty members</p>
-          <Pagination count={3} page={page} onChange={(_, v) => setPage(v)} size="small" />
+          <p className="text-xs text-slate-400">Showing {teachers.length} of {pagination.total} faculty members</p>
+          <Pagination count={pagination.totalPages} page={page} onChange={handlePage} size="small" />
         </div>
       </div>
+
+      {/* Add/Edit Dialog */}
+      <FormDialog
+        open={dialog.open}
+        onClose={closeDialog}
+        title={dialog.mode === 'add' ? 'Add Faculty' : 'Edit Faculty'}
+        subtitle="Organize faculty records with department, designation, teaching subjects, and status."
+        error={error}
+        onPrimary={handleSave}
+        primaryDisabled={saving || !form.name || !form.email || !form.facultyId}
+        primaryLabel={dialog.mode === 'add' ? 'Add Faculty' : 'Save Changes'}
+        loading={saving}
+      >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <TextField label="Full Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} size="small" fullWidth required />
+            <TextField label="Faculty ID" value={form.facultyId} onChange={(e) => setForm({ ...form, facultyId: e.target.value })} size="small" fullWidth required />
+            <TextField label="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} size="small" fullWidth required />
+            <TextField label="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} size="small" fullWidth />
+            <FormControl size="small" fullWidth>
+              <InputLabel>Department</InputLabel>
+              <Select value={form.department} label="Department" onChange={(e) => setForm({ ...form, department: e.target.value })}>
+                {DEPARTMENTS.map((d) => <MenuItem key={d} value={d}>{d}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControl size="small" fullWidth>
+              <InputLabel>Designation</InputLabel>
+              <Select value={form.designation} label="Designation" onChange={(e) => setForm({ ...form, designation: e.target.value })}>
+                {FACULTY_DESIGNATIONS.map((d) => <MenuItem key={d} value={d}>{d}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <TextField label="Subjects (comma separated)" value={form.subjects} onChange={(e) => setForm({ ...form, subjects: e.target.value })} size="small" fullWidth sx={{ gridColumn: { sm: 'span 2' } }} />
+            <TextField label="Experience (years)" value={form.experienceYears} onChange={(e) => setForm({ ...form, experienceYears: e.target.value })} size="small" fullWidth type="number" />
+            <FormControl size="small" fullWidth>
+              <InputLabel>Status</InputLabel>
+              <Select value={form.status} label="Status" onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                {['Active', 'Inactive', 'On Leave'].map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+              </Select>
+            </FormControl>
+          </div>
+      </FormDialog>
     </div>
   );
 }

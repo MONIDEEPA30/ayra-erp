@@ -9,16 +9,21 @@ import {
 
 export default function LoginPage() {
   const { login, loginError, setLoginError } = useAuth();
+  const [selectedAccount, setSelectedAccount] = useState('Master Admin');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const accountTypes = ['Accounts', 'HR', 'Academics', 'Master Admin'];
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (selectedAccount !== 'Master Admin') {
+      setLoginError('Only Master Admin login is enabled right now.');
+      return;
+    }
     setLoading(true);
-    await new Promise((r) => setTimeout(r, 700)); // simulate network
-    login(username, password);
+    await login(username, password, 'superadmin');
     setLoading(false);
   };
 
@@ -151,6 +156,41 @@ export default function LoginPage() {
                 }}
               />
 
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-400 mb-2">Portal Access</p>
+                <div className="grid grid-cols-2 gap-2">
+                  {accountTypes.map((account) => {
+                    const isActive = selectedAccount === account;
+                    const isEnabled = account === 'Master Admin';
+
+                    return (
+                      <button
+                        key={account}
+                        type="button"
+                        onClick={() => {
+                          setSelectedAccount(account);
+                          if (account !== 'Master Admin') {
+                            setLoginError('Only Master Admin login is enabled right now.');
+                          } else {
+                            setLoginError('');
+                          }
+                        }}
+                        className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition-all ${
+                          isActive
+                            ? 'border-primary-600 bg-primary-50 text-primary-700'
+                            : 'border-slate-200 bg-white text-slate-500'
+                        } ${!isEnabled ? 'opacity-70' : ''}`}
+                      >
+                        {account}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs text-slate-400 mt-2">
+                  Master Admin login is active. Other portals are reserved for future role-based access.
+                </p>
+              </div>
+
               <div className="flex items-center justify-between pt-1">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input type="checkbox" className="w-4 h-4 accent-indigo-600 rounded" />
@@ -165,7 +205,7 @@ export default function LoginPage() {
                 type="submit"
                 variant="contained"
                 fullWidth
-                disabled={loading || !username || !password}
+                disabled={loading || !username || !password || selectedAccount !== 'Master Admin'}
                 sx={{ mt: 1, py: 1.4, fontSize: '0.95rem', fontWeight: 600 }}
               >
                 {loading ? <CircularProgress size={20} color="inherit" /> : 'Sign in to Dashboard'}
@@ -174,9 +214,8 @@ export default function LoginPage() {
 
             <div className="mt-6 pt-5 border-t border-slate-100">
               <p className="text-center text-xs text-slate-400">
-                Default credentials: <span className="font-mono text-slate-600">admin / admin@123</span>
+                Run <span className="font-mono text-slate-600">npm run seed</span> in backend to create the default admin account.
               </p>
-              <p className="text-center text-xs text-slate-400 mt-1">Change in <code className="text-slate-600">src/context/AuthContext.jsx</code></p>
             </div>
           </div>
 

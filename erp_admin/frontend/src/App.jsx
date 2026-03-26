@@ -12,6 +12,7 @@ import TeachersPage from './pages/TeachersPage';
 import AcademicsPage from './pages/AcademicsPage';
 import FinancePage from './pages/FinancePage';
 import CommunicationPage from './pages/CommunicationPage';
+import MyAdminsPage from './pages/MyAdminsPage';
 import SettingsPage from './pages/SettingsPage';
 import NotFoundPage from './pages/NotFoundPage';
 
@@ -40,6 +41,7 @@ function AppRoutes() {
         <Route path="academics" element={<AcademicsPage />} />
         <Route path="finance" element={<FinancePage />} />
         <Route path="communication" element={<CommunicationPage />} />
+        <Route path="my-admins" element={<MyAdminsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />

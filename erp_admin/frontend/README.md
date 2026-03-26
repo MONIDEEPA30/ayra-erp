@@ -1,16 +1,14 @@
-# AYRA ERP — Admin Frontend
+# AYRA ERP - Frontend
 
-A full-featured university ERP admin portal built with **React (Vite) + Tailwind CSS + Material UI (MUI)**.
+React admin portal for the AYRA ERP system, built with Vite, MUI, Tailwind CSS, Axios, and Recharts.
 
----
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- Node.js 18+ installed
-- npm or yarn
+- Node.js 18+
+- Backend API running on `http://localhost:5000`
 
-### Install & Run
+### Install and Run
 
 ```bash
 cd frontend
@@ -18,94 +16,122 @@ npm install
 npm run dev
 ```
 
-Then open: **http://localhost:5173**
+Frontend runs at `http://localhost:5173`.
 
----
+## Login
 
-## 🔐 Default Login Credentials
+The login screen now supports multiple portal buttons:
+- `Accounts`
+- `HR`
+- `Academics`
+- `Master Admin`
 
-| Field    | Value       |
-|----------|-------------|
-| Username | `admin`     |
-| Password | `admin@123` |
+At the moment, only `Master Admin` is enabled for actual login.
 
-> **To change credentials:** Edit `src/context/AuthContext.jsx` — update the `DEFAULT_ADMIN` object at the top.
+If you seeded the backend, the default Master Admin account is:
+- Username: `admin`
+- Password: `admin@123`
 
----
+## Current Frontend Structure
 
-## 📁 Folder Structure
-
-```
+```text
 frontend/
-├── public/
-├── src/
-│   ├── assets/              # Static assets (images, icons)
-│   ├── components/
-│   │   ├── common/          # Reusable components (StatCard, PageHeader, EmptyState)
-│   │   └── layout/          # AdminLayout, Sidebar, Topbar
-│   ├── context/
-│   │   └── AuthContext.jsx  # Login state & credentials
-│   ├── hooks/               # Custom React hooks
-│   ├── pages/               # All page components
-│   │   ├── LoginPage.jsx
-│   │   ├── DashboardPage.jsx
-│   │   ├── StudentsPage.jsx
-│   │   ├── TeachersPage.jsx
-│   │   ├── AcademicsPage.jsx
-│   │   ├── FinancePage.jsx
-│   │   ├── CommunicationPage.jsx
-│   │   ├── SettingsPage.jsx
-│   │   └── NotFoundPage.jsx
-│   ├── theme/               # MUI theme customization
-│   ├── utils/               # Helpers, constants
-│   ├── App.jsx              # Root component + routing
-│   ├── main.jsx             # React entry point
-│   └── index.css            # Global styles + Tailwind
-├── index.html
-├── tailwind.config.js
-├── vite.config.js
-└── package.json
+|-- src/
+|   |-- components/
+|   |   |-- common/
+|   |   |   |-- AdminManagement.jsx
+|   |   |   |-- EmptyState.jsx
+|   |   |   |-- FormDialog.jsx
+|   |   |   |-- PageHeader.jsx
+|   |   |   `-- StatCard.jsx
+|   |   `-- layout/
+|   |       `-- AdminLayout.jsx
+|   |-- context/
+|   |   `-- AuthContext.jsx
+|   |-- hooks/
+|   |   `-- useLocalStorage.js
+|   |-- pages/
+|   |   |-- AcademicsPage.jsx
+|   |   |-- CommunicationPage.jsx
+|   |   |-- DashboardPage.jsx
+|   |   |-- FinancePage.jsx
+|   |   |-- LoginPage.jsx
+|   |   |-- MyAdminsPage.jsx
+|   |   |-- NotFoundPage.jsx
+|   |   |-- SettingsPage.jsx
+|   |   |-- StudentsPage.jsx
+|   |   `-- TeachersPage.jsx
+|   |-- theme/
+|   |   `-- index.js
+|   |-- utils/
+|   |   |-- api.js
+|   |   |-- constants.js
+|   |   `-- helpers.js
+|   |-- App.jsx
+|   |-- index.css
+|   `-- main.jsx
+|-- index.html
+|-- package.json
+|-- postcss.config.js
+|-- tailwind.config.js
+`-- vite.config.js
 ```
 
----
+## Main Screens
 
-## 🏗️ Tech Stack
+- `LoginPage`: Master Admin login with portal selector
+- `DashboardPage`: live KPIs, charts, quick add student, Master Admin controls
+- `StudentsPage`: list, search, filter, create, edit, delete students
+- `TeachersPage`: list and manage faculty
+- `AcademicsPage`: manage courses and exam schedules
+- `FinancePage`: fee records, payment entry, finance charts
+- `CommunicationPage`: announcements and communication overview
+- `MyAdminsPage`: active admins, removed admins, service history, admin activity stats
+- `SettingsPage`: profile, security, notifications, appearance, admin management
 
-| Technology | Purpose |
-|------------|---------|
-| React 18 + Vite | Frontend framework & build tool |
-| Tailwind CSS | Utility-first CSS |
-| Material UI (MUI) v5 | UI component library |
-| React Router v6 | Client-side routing |
-| Recharts | Charts & data visualization |
-| Sora + DM Sans | Typography (Google Fonts) |
+## Shared UI Components
 
----
+- `FormDialog.jsx`: common styled popup shell for add/edit forms
+- `AdminManagement.jsx`: reusable admin CRUD panel used in dashboard and settings
+- `AdminLayout.jsx`: sidebar, topbar, notifications, and global search
 
-## 📋 Features
+## Global Search
 
-- ✅ **Login Page** — Secure admin authentication with show/hide password
-- ✅ **Dashboard** — KPI stats, enrollment trend, fee collection, dept. distribution, activity feed
-- ✅ **Students** — Table with search, filter by dept/year, status badges, CRUD actions
-- ✅ **Teachers** — Faculty profiles, designations, subjects, ratings
-- ✅ **Academics** — Course management, exam schedule, timetable tab
-- ✅ **Finance** — Fee records, collection charts, expense breakdown
-- ✅ **Communication** — Announcements, inbox messages, broadcasts
-- ✅ **Settings** — Profile, security, notifications, university info, appearance
-- ✅ **Responsive** — Works on mobile, tablet, and desktop
-- ✅ **Notifications** — Topbar notification bell with unread count
-- ✅ **Sidebar** — Collapsible on mobile, always visible on desktop
+The dashboard/top layout search bar is now a global search. It fetches live suggestions from:
+- students
+- teachers
+- courses
+- announcements
+- admins (for superadmin users)
 
----
+## Admin Features
 
-## 🔜 Next Steps (Backend Integration)
+For `superadmin` users, the frontend includes:
+- admin creation and editing
+- admin activation/deactivation
+- admin archive visibility
+- removed admin history
+- service duration and last activity display
+- dedicated `My Admins` sidebar page
 
-1. Replace `AuthContext.jsx` login logic with real API call
-2. Replace mock data arrays in each page with `fetch`/`axios` calls to your backend
-3. Add tenant ID header to all API requests once multi-tenancy is ready
-4. Connect MUI DataGrid in Students/Teachers pages with server-side pagination
+## Tech Stack
 
----
+- React 18
+- Vite
+- Material UI
+- Tailwind CSS
+- Axios
+- React Router
+- Recharts
 
-## 📄 License
-MIT — Free to use and modify.
+## Build
+
+```bash
+npm run build
+```
+
+## Notes
+
+- The frontend expects the backend auth and admin APIs to be available.
+- Token refresh is handled in `src/utils/api.js`.
+- Some topbar notifications are still static UI data.

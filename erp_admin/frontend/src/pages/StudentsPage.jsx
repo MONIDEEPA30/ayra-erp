@@ -1,52 +1,99 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Button, TextField, InputAdornment, Avatar, Chip, IconButton,
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
-  Paper, Select, MenuItem, FormControl, InputLabel, Pagination, Tooltip,
+  Select, MenuItem, FormControl, InputLabel, Pagination, Tooltip,
+  CircularProgress, Alert,
 } from '@mui/material';
-import {
-  Search, Add, FilterList, Download, Edit, Delete,
-  Visibility, People, School, CheckCircle, Cancel,
-} from '@mui/icons-material';
+import { Search, Add, FilterList, Download, Edit, Delete, Visibility, People, School, CheckCircle, Cancel } from '@mui/icons-material';
+import api from '../utils/api';
+import { getInitials, stringToColor, debounce } from '../utils/helpers';
+import { DEPARTMENTS, YEARS } from '../utils/constants';
+import FormDialog from '../components/common/FormDialog';
 
-const STUDENTS = [
-  { id: 'CS2024001', name: 'Aarav Sharma', dept: 'Computer Science', year: '3rd Year', email: 'aarav.s@uni.edu', phone: '9876543210', status: 'Active', fees: 'Paid', cgpa: 8.9, avatar: 'A' },
-  { id: 'CS2024002', name: 'Priya Verma', dept: 'Computer Science', year: '2nd Year', email: 'priya.v@uni.edu', phone: '9876543211', status: 'Active', fees: 'Pending', cgpa: 9.1, avatar: 'P' },
-  { id: 'EC2023015', name: 'Rohit Nayak', dept: 'Electronics', year: '4th Year', email: 'rohit.n@uni.edu', phone: '9876543212', status: 'Active', fees: 'Paid', cgpa: 7.8, avatar: 'R' },
-  { id: 'ME2024008', name: 'Sneha Patil', dept: 'Mechanical', year: '1st Year', email: 'sneha.p@uni.edu', phone: '9876543213', status: 'Active', fees: 'Paid', cgpa: 8.2, avatar: 'S' },
-  { id: 'BA2023022', name: 'Kiran Das', dept: 'Business Admin', year: '2nd Year', email: 'kiran.d@uni.edu', phone: '9876543214', status: 'Inactive', fees: 'Pending', cgpa: 7.5, avatar: 'K' },
-  { id: 'CS2024003', name: 'Meera Joshi', dept: 'Computer Science', year: '3rd Year', email: 'meera.j@uni.edu', phone: '9876543215', status: 'Active', fees: 'Paid', cgpa: 9.4, avatar: 'M' },
-  { id: 'PH2023010', name: 'Arjun Reddy', dept: 'Physics', year: '2nd Year', email: 'arjun.r@uni.edu', phone: '9876543216', status: 'Active', fees: 'Paid', cgpa: 8.7, avatar: 'A' },
-  { id: 'MA2024011', name: 'Divya Singh', dept: 'Mathematics', year: '1st Year', email: 'divya.s@uni.edu', phone: '9876543217', status: 'Active', fees: 'Pending', cgpa: 8.0, avatar: 'D' },
-];
+const ITEMS_PER_PAGE = 10;
 
-const DEPT_COLORS = {
-  'Computer Science': '#4f46e5',
-  'Electronics': '#06b6d4',
-  'Mechanical': '#f59e0b',
-  'Business Admin': '#10b981',
-  'Physics': '#8b5cf6',
-  'Mathematics': '#ef4444',
-};
-
-const statCards = [
-  { label: 'Total Students', value: '4,217', icon: People, color: '#4f46e5', bg: '#eef2ff' },
-  { label: 'Active', value: '4,082', icon: CheckCircle, color: '#10b981', bg: '#ecfdf5' },
-  { label: 'Inactive', value: '135', icon: Cancel, color: '#ef4444', bg: '#fef2f2' },
-  { label: 'Departments', value: '24', icon: School, color: '#f59e0b', bg: '#fffbeb' },
-];
+const emptyForm = { name: '', email: '', phone: '', rollNo: '', department: '', year: '', status: 'Active', feeStatus: 'Pending', cgpa: '' };
 
 export default function StudentsPage() {
+  const [students, setStudents] = useState([]);
+  const [pagination, setPagination] = useState({ total: 0, totalPages: 1 });
+  const [stats, setStats] = useState({ total: 0, active: 0, inactive: 0 });
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [deptFilter, setDeptFilter] = useState('');
+  const [yearFilter, setYearFilter] = useState('');
   const [page, setPage] = useState(1);
+  const [dialog, setDialog] = useState({ open: false, mode: 'add', data: null });
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
-  const filtered = STUDENTS.filter((s) =>
-    (s.name.toLowerCase().includes(search.toLowerCase()) ||
-      s.id.toLowerCase().includes(search.toLowerCase()) ||
-      s.email.toLowerCase().includes(search.toLowerCase())) &&
-    (deptFilter ? s.dept === deptFilter : true)
-  );
+  const fetchStudents = useCallback(async (q = search, dept = deptFilter, yr = yearFilter, pg = page) => {
+    setLoading(true);
+    try {
+      const params = { page: pg, limit: ITEMS_PER_PAGE };
+      if (q) params.search = q;
+      if (dept) params.department = dept;
+      if (yr) params.year = yr;
+      const { data } = await api.get('/students', { params });
+      setStudents(data.data.students);
+      setPagination(data.data.pagination);
+    } catch { setError('Failed to load students.'); }
+    finally { setLoading(false); }
+  }, []);
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const { data } = await api.get('/students/stats');
+      setStats({ total: data.data.total, active: data.data.active, inactive: data.data.inactive });
+    } catch { /* silent */ }
+  }, []);
+
+  useEffect(() => { fetchStudents(); fetchStats(); }, []);
+
+  const debouncedSearch = useCallback(debounce((val) => { setPage(1); fetchStudents(val, deptFilter, yearFilter, 1); }, 400), [deptFilter, yearFilter]);
+
+  const handleSearch = (e) => { setSearch(e.target.value); debouncedSearch(e.target.value); };
+  const handleDept = (e) => { setDeptFilter(e.target.value); setPage(1); fetchStudents(search, e.target.value, yearFilter, 1); };
+  const handleYear = (e) => { setYearFilter(e.target.value); setPage(1); fetchStudents(search, deptFilter, e.target.value, 1); };
+  const handlePage = (_, v) => { setPage(v); fetchStudents(search, deptFilter, yearFilter, v); };
+
+  const openAdd = () => { setForm(emptyForm); setDialog({ open: true, mode: 'add', data: null }); };
+  const openEdit = (s) => { setForm({ name: s.name, email: s.email, phone: s.phone || '', rollNo: s.rollNo, department: s.department, year: s.year, status: s.status, feeStatus: s.feeStatus, cgpa: s.cgpa || '' }); setDialog({ open: true, mode: 'edit', data: s }); };
+  const closeDialog = () => { setDialog({ open: false, mode: 'add', data: null }); setError(''); };
+
+  const handleSave = async () => {
+    setSaving(true); setError('');
+    try {
+      if (dialog.mode === 'add') {
+        await api.post('/students', form);
+      } else {
+        await api.put(`/students/${dialog.data._id}`, form);
+      }
+      closeDialog();
+      fetchStudents();
+      fetchStats();
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to save student.');
+    } finally { setSaving(false); }
+  };
+
+  const handleDelete = async (id) => {
+    if (!window.confirm('Delete this student?')) return;
+    try {
+      await api.delete(`/students/${id}`);
+      fetchStudents();
+      fetchStats();
+    } catch { setError('Failed to delete student.'); }
+  };
+
+  const statCards = [
+    { label: 'Total Students', value: stats.total.toLocaleString(), icon: People, color: '#4f46e5', bg: '#eef2ff' },
+    { label: 'Active', value: stats.active.toLocaleString(), icon: CheckCircle, color: '#10b981', bg: '#ecfdf5' },
+    { label: 'Inactive', value: stats.inactive.toLocaleString(), icon: Cancel, color: '#ef4444', bg: '#fef2f2' },
+    { label: 'Departments', value: DEPARTMENTS.length.toString(), icon: School, color: '#f59e0b', bg: '#fffbeb' },
+  ];
 
   return (
     <div className="space-y-5">
@@ -57,12 +104,14 @@ export default function StudentsPage() {
         </div>
         <div className="flex gap-2.5">
           <Button variant="outlined" size="small" startIcon={<Download />} sx={{ borderColor: '#e2e8f0', color: '#475569' }}>Export</Button>
-          <Button variant="contained" size="small" startIcon={<Add />}>Add Student</Button>
+          <Button variant="contained" size="small" startIcon={<Add />} onClick={openAdd}>Add Student</Button>
         </div>
       </div>
 
+      {error && <Alert severity="error" onClose={() => setError('')}>{error}</Alert>}
+
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 stagger-children">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((s) => {
           const Icon = s.icon;
           return (
@@ -81,33 +130,22 @@ export default function StudentsPage() {
 
       {/* Filters */}
       <div className="bg-white rounded-2xl border border-slate-100 shadow-card p-4 flex flex-col sm:flex-row gap-3 animate-fadeInUp">
-        <TextField
-          placeholder="Search by name, ID or email..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          size="small"
-          sx={{ flex: 1 }}
-          InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 18, color: '#94a3b8' }} /></InputAdornment> }}
-        />
+        <TextField placeholder="Search by name, ID or email..." value={search} onChange={handleSearch} size="small" sx={{ flex: 1 }}
+          InputProps={{ startAdornment: <InputAdornment position="start"><Search sx={{ fontSize: 18, color: '#94a3b8' }} /></InputAdornment> }} />
         <FormControl size="small" sx={{ minWidth: 180 }}>
           <InputLabel>Department</InputLabel>
-          <Select value={deptFilter} label="Department" onChange={(e) => setDeptFilter(e.target.value)}>
+          <Select value={deptFilter} label="Department" onChange={handleDept}>
             <MenuItem value="">All Departments</MenuItem>
-            {[...new Set(STUDENTS.map((s) => s.dept))].map((d) => (
-              <MenuItem key={d} value={d}>{d}</MenuItem>
-            ))}
+            {DEPARTMENTS.map((d) => <MenuItem key={d} value={d}>{d}</MenuItem>)}
           </Select>
         </FormControl>
         <FormControl size="small" sx={{ minWidth: 130 }}>
           <InputLabel>Year</InputLabel>
-          <Select value="" label="Year">
+          <Select value={yearFilter} label="Year" onChange={handleYear}>
             <MenuItem value="">All Years</MenuItem>
-            {['1st Year', '2nd Year', '3rd Year', '4th Year'].map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
+            {YEARS.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
           </Select>
         </FormControl>
-        <Button variant="outlined" size="small" startIcon={<FilterList />} sx={{ borderColor: '#e2e8f0', color: '#475569', minWidth: 100 }}>
-          Filters
-        </Button>
       </div>
 
       {/* Table */}
@@ -127,50 +165,35 @@ export default function StudentsPage() {
               </TableRow>
             </TableHead>
             <TableBody>
-              {filtered.map((s) => (
-                <TableRow key={s.id} hover sx={{ '&:hover': { bgcolor: '#fafbff' } }}>
+              {loading ? (
+                <TableRow><TableCell colSpan={8} align="center" sx={{ py: 6 }}><CircularProgress size={28} /></TableCell></TableRow>
+              ) : students.length === 0 ? (
+                <TableRow><TableCell colSpan={8} align="center" sx={{ py: 6, color: '#94a3b8' }}>No students found</TableCell></TableRow>
+              ) : students.map((s) => (
+                <TableRow key={s._id} hover sx={{ '&:hover': { bgcolor: '#fafbff' } }}>
                   <TableCell>
                     <div className="flex items-center gap-3">
-                      <Avatar sx={{ width: 36, height: 36, bgcolor: DEPT_COLORS[s.dept] || '#4f46e5', fontSize: 14, fontWeight: 700 }}>
-                        {s.avatar}
-                      </Avatar>
+                      <Avatar sx={{ width: 36, height: 36, bgcolor: stringToColor(s.name), fontSize: 14, fontWeight: 700 }}>{getInitials(s.name)}</Avatar>
                       <div>
                         <p className="font-semibold text-sm text-slate-800">{s.name}</p>
                         <p className="text-xs text-slate-400">{s.email}</p>
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell><span className="font-mono text-xs font-medium text-slate-600 bg-slate-50 px-2 py-1 rounded-md">{s.id}</span></TableCell>
-                  <TableCell>
-                    <span className="text-xs font-medium" style={{ color: DEPT_COLORS[s.dept] }}>{s.dept}</span>
-                  </TableCell>
+                  <TableCell><span className="font-mono text-xs font-medium text-slate-600 bg-slate-50 px-2 py-1 rounded-md">{s.rollNo}</span></TableCell>
+                  <TableCell><span className="text-xs font-medium text-slate-700">{s.department}</span></TableCell>
                   <TableCell><span className="text-sm text-slate-700">{s.year}</span></TableCell>
+                  <TableCell><span className="font-semibold text-slate-800 text-sm">{s.cgpa || '—'}</span></TableCell>
                   <TableCell>
-                    <div className="flex items-center gap-2">
-                      <span className="font-semibold text-slate-800 text-sm">{s.cgpa}</span>
-                    </div>
+                    <Chip label={s.feeStatus} size="small" sx={{ bgcolor: s.feeStatus === 'Paid' ? '#ecfdf5' : s.feeStatus === 'Overdue' ? '#fef2f2' : '#fff7ed', color: s.feeStatus === 'Paid' ? '#059669' : s.feeStatus === 'Overdue' ? '#ef4444' : '#d97706', fontWeight: 600, fontSize: '0.7rem', height: 22 }} />
                   </TableCell>
                   <TableCell>
-                    <Chip label={s.fees} size="small"
-                      sx={{
-                        bgcolor: s.fees === 'Paid' ? '#ecfdf5' : '#fff7ed',
-                        color: s.fees === 'Paid' ? '#059669' : '#d97706',
-                        fontWeight: 600, fontSize: '0.7rem', height: 22,
-                      }} />
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={s.status} size="small"
-                      sx={{
-                        bgcolor: s.status === 'Active' ? '#eef2ff' : '#fef2f2',
-                        color: s.status === 'Active' ? '#4f46e5' : '#ef4444',
-                        fontWeight: 600, fontSize: '0.7rem', height: 22,
-                      }} />
+                    <Chip label={s.status} size="small" sx={{ bgcolor: s.status === 'Active' ? '#eef2ff' : '#fef2f2', color: s.status === 'Active' ? '#4f46e5' : '#ef4444', fontWeight: 600, fontSize: '0.7rem', height: 22 }} />
                   </TableCell>
                   <TableCell align="right">
                     <div className="flex items-center justify-end gap-1">
-                      <Tooltip title="View"><IconButton size="small"><Visibility sx={{ fontSize: 16, color: '#64748b' }} /></IconButton></Tooltip>
-                      <Tooltip title="Edit"><IconButton size="small"><Edit sx={{ fontSize: 16, color: '#64748b' }} /></IconButton></Tooltip>
-                      <Tooltip title="Delete"><IconButton size="small"><Delete sx={{ fontSize: 16, color: '#ef4444' }} /></IconButton></Tooltip>
+                      <Tooltip title="Edit"><IconButton size="small" onClick={() => openEdit(s)}><Edit sx={{ fontSize: 16, color: '#64748b' }} /></IconButton></Tooltip>
+                      <Tooltip title="Delete"><IconButton size="small" onClick={() => handleDelete(s._id)}><Delete sx={{ fontSize: 16, color: '#ef4444' }} /></IconButton></Tooltip>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -179,10 +202,49 @@ export default function StudentsPage() {
           </Table>
         </TableContainer>
         <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-100">
-          <p className="text-xs text-slate-400">Showing {filtered.length} of {STUDENTS.length} students</p>
-          <Pagination count={Math.ceil(STUDENTS.length / 10)} page={page} onChange={(_, v) => setPage(v)} size="small" />
+          <p className="text-xs text-slate-400">Showing {students.length} of {pagination.total} students</p>
+          <Pagination count={pagination.totalPages} page={page} onChange={handlePage} size="small" />
         </div>
       </div>
+
+      {/* Add/Edit Dialog */}
+      <FormDialog
+        open={dialog.open}
+        onClose={closeDialog}
+        title={dialog.mode === 'add' ? 'Add Student' : 'Edit Student'}
+        subtitle="Capture student identity, academic details, and status in one clean form."
+        error={error}
+        onPrimary={handleSave}
+        primaryDisabled={saving || !form.name || !form.rollNo || !form.email}
+        primaryLabel={dialog.mode === 'add' ? 'Add Student' : 'Save Changes'}
+        loading={saving}
+      >
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <TextField label="Full Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} size="small" fullWidth required />
+            <TextField label="Roll No." value={form.rollNo} onChange={(e) => setForm({ ...form, rollNo: e.target.value })} size="small" fullWidth required />
+            <TextField label="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} size="small" fullWidth required />
+            <TextField label="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} size="small" fullWidth />
+            <FormControl size="small" fullWidth>
+              <InputLabel>Department</InputLabel>
+              <Select value={form.department} label="Department" onChange={(e) => setForm({ ...form, department: e.target.value })}>
+                {DEPARTMENTS.map((d) => <MenuItem key={d} value={d}>{d}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControl size="small" fullWidth>
+              <InputLabel>Year</InputLabel>
+              <Select value={form.year} label="Year" onChange={(e) => setForm({ ...form, year: e.target.value })}>
+                {YEARS.map((y) => <MenuItem key={y} value={y}>{y}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <FormControl size="small" fullWidth>
+              <InputLabel>Status</InputLabel>
+              <Select value={form.status} label="Status" onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                {['Active', 'Inactive', 'Suspended', 'Graduated'].map((s) => <MenuItem key={s} value={s}>{s}</MenuItem>)}
+              </Select>
+            </FormControl>
+            <TextField label="CGPA" value={form.cgpa} onChange={(e) => setForm({ ...form, cgpa: e.target.value })} size="small" fullWidth type="number" inputProps={{ step: 0.1, min: 0, max: 10 }} />
+          </div>
+      </FormDialog>
     </div>
   );
 }

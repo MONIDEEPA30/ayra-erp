@@ -1,16 +1,7 @@
 import { createContext, useContext, useState } from 'react';
+import api from '../utils/api';
 
 const AuthContext = createContext(null);
-
-// Default admin credentials — change these as you like
-const DEFAULT_ADMIN = {
-  username: 'admin',
-  password: 'admin@123',
-  name: 'Admin',
-  role: 'Administrator',
-  email: 'admin@university.edu',
-  avatar: null,
-};
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
@@ -19,31 +10,44 @@ export function AuthProvider({ children }) {
   });
   const [loginError, setLoginError] = useState('');
 
-  const login = (username, password) => {
-    if (username === DEFAULT_ADMIN.username && password === DEFAULT_ADMIN.password) {
-      const userData = {
-        username: DEFAULT_ADMIN.username,
-        name: DEFAULT_ADMIN.name,
-        role: DEFAULT_ADMIN.role,
-        email: DEFAULT_ADMIN.email,
-      };
-      setUser(userData);
-      localStorage.setItem('erp_admin_user', JSON.stringify(userData));
+  const login = async (username, password, expectedRole = null) => {
+    try {
+      const { data } = await api.post('/auth/login', { username, password });
+      const { accessToken, refreshToken, admin } = data.data;
+
+      if (expectedRole && admin.role !== expectedRole) {
+        setLoginError('This account does not have access to the selected portal.');
+        return false;
+      }
+
+      localStorage.setItem('erp_access_token', accessToken);
+      localStorage.setItem('erp_refresh_token', refreshToken);
+      localStorage.setItem('erp_admin_user', JSON.stringify(admin));
+      setUser(admin);
       setLoginError('');
       return true;
-    } else {
-      setLoginError('Invalid username or password.');
+    } catch (err) {
+      setLoginError(err.response?.data?.message || 'Invalid username or password.');
       return false;
     }
   };
 
-  const logout = () => {
-    setUser(null);
+  const logout = async () => {
+    try { await api.post('/auth/logout'); } catch { /* ignore */ }
+    localStorage.removeItem('erp_access_token');
+    localStorage.removeItem('erp_refresh_token');
     localStorage.removeItem('erp_admin_user');
+    setUser(null);
+  };
+
+  const updateUser = (updated) => {
+    const merged = { ...user, ...updated };
+    setUser(merged);
+    localStorage.setItem('erp_admin_user', JSON.stringify(merged));
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loginError, setLoginError }}>
+    <AuthContext.Provider value={{ user, login, logout, loginError, setLoginError, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

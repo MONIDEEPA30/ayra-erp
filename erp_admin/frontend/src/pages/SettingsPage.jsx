@@ -1,30 +1,56 @@
 import { useState } from 'react';
-import {
-  Button, TextField, Switch, Divider, Avatar, Chip,
-} from '@mui/material';
-import {
-  Person, Lock, Notifications, Palette, School, Save,
-  AdminPanelSettings, Language, Security,
-} from '@mui/icons-material';
+import { Button, TextField, Switch, Divider, Avatar, CircularProgress, Alert } from '@mui/material';
+import { Person, Lock, Notifications, Palette, School, Save, Security } from '@mui/icons-material';
+import api from '../utils/api';
+import { useAuth } from '../context/AuthContext';
+import { getInitials } from '../utils/helpers';
+import AdminManagement from '../components/common/AdminManagement';
 
 const sections = [
   { id: 'profile', label: 'Profile', icon: Person },
   { id: 'security', label: 'Security', icon: Lock },
+  { id: 'admins', label: 'Manage Admins', icon: Security },
   { id: 'notifications', label: 'Notifications', icon: Notifications },
   { id: 'university', label: 'University Info', icon: School },
   { id: 'appearance', label: 'Appearance', icon: Palette },
 ];
 
 export default function SettingsPage() {
+  const { user, updateUser } = useAuth();
   const [active, setActive] = useState('profile');
-  const [notifications, setNotifications] = useState({
-    email: true,
-    sms: false,
-    feeAlerts: true,
-    examAlerts: true,
-    admissions: true,
-    system: false,
-  });
+  const [profileForm, setProfileForm] = useState({ name: user?.name || '', email: user?.email || '', phone: user?.phone || '', department: user?.department || '' });
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [notifications, setNotifications] = useState({ email: true, sms: false, feeAlerts: true, examAlerts: true, admissions: true, system: false });
+  const [saving, setSaving] = useState(false);
+  const [success, setSuccess] = useState('');
+  const [error, setError] = useState('');
+
+  const handleProfileSave = async () => {
+    setSaving(true); setError(''); setSuccess('');
+    try {
+      const { data } = await api.put('/auth/profile', profileForm);
+      updateUser(data.data.admin);
+      setSuccess('Profile updated successfully.');
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update profile.');
+    } finally { setSaving(false); }
+  };
+
+  const handlePasswordSave = async () => {
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      setError('New passwords do not match.'); return;
+    }
+    setSaving(true); setError(''); setSuccess('');
+    try {
+      await api.put('/auth/change-password', { currentPassword: passwordForm.currentPassword, newPassword: passwordForm.newPassword });
+      setSuccess('Password updated successfully.');
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to update password.');
+    } finally { setSaving(false); }
+  };
+
+  const clearMessages = () => { setError(''); setSuccess(''); };
 
   return (
     <div className="space-y-5">
@@ -40,7 +66,7 @@ export default function SettingsPage() {
             {sections.map((s) => {
               const Icon = s.icon;
               return (
-                <button key={s.id} onClick={() => setActive(s.id)}
+                <button key={s.id} onClick={() => { setActive(s.id); clearMessages(); }}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${active === s.id ? 'bg-primary-50 text-primary-700' : 'text-slate-600 hover:bg-slate-50'}`}>
                   <Icon sx={{ fontSize: 18 }} />
                   {s.label}
@@ -52,28 +78,33 @@ export default function SettingsPage() {
 
         {/* Content */}
         <div className="flex-1 bg-white rounded-2xl border border-slate-100 shadow-card p-6">
+          {error && <Alert severity="error" onClose={clearMessages} sx={{ mb: 3 }}>{error}</Alert>}
+          {success && <Alert severity="success" onClose={clearMessages} sx={{ mb: 3 }}>{success}</Alert>}
+
           {active === 'profile' && (
             <div className="space-y-5">
               <h2 className="font-heading font-600 text-slate-900 text-lg">Profile Settings</h2>
               <div className="flex items-center gap-4">
-                <Avatar sx={{ width: 72, height: 72, bgcolor: '#4f46e5', fontSize: 28, fontWeight: 700 }}>A</Avatar>
+                <Avatar sx={{ width: 72, height: 72, bgcolor: '#4f46e5', fontSize: 28, fontWeight: 700 }}>
+                  {getInitials(user?.name || 'A')}
+                </Avatar>
                 <div>
-                  <Button variant="outlined" size="small" sx={{ borderColor: '#e2e8f0', color: '#475569' }}>Change Photo</Button>
-                  <p className="text-xs text-slate-400 mt-1.5">JPG, GIF or PNG. Max size 2MB.</p>
+                  <p className="text-sm font-semibold text-slate-800">{user?.name}</p>
+                  <p className="text-xs text-slate-400">{user?.role}</p>
                 </div>
               </div>
               <Divider />
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <TextField fullWidth label="Full Name" defaultValue="Admin" size="small" />
-                <TextField fullWidth label="Username" defaultValue="admin" size="small" />
-                <TextField fullWidth label="Email Address" defaultValue="admin@university.edu" size="small" />
-                <TextField fullWidth label="Phone Number" defaultValue="+91 98765 43210" size="small" />
-                <TextField fullWidth label="Role" defaultValue="Administrator" size="small" disabled />
-                <TextField fullWidth label="Department" defaultValue="Administration" size="small" />
+                <TextField fullWidth label="Full Name" value={profileForm.name} onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })} size="small" />
+                <TextField fullWidth label="Email Address" value={profileForm.email} onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })} size="small" />
+                <TextField fullWidth label="Phone Number" value={profileForm.phone} onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })} size="small" />
+                <TextField fullWidth label="Department" value={profileForm.department} onChange={(e) => setProfileForm({ ...profileForm, department: e.target.value })} size="small" />
+                <TextField fullWidth label="Username" value={user?.username || ''} size="small" disabled />
+                <TextField fullWidth label="Role" value={user?.role || ''} size="small" disabled />
               </div>
-              <div className="pt-2">
-                <Button variant="contained" startIcon={<Save />}>Save Changes</Button>
-              </div>
+              <Button variant="contained" startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <Save />} onClick={handleProfileSave} disabled={saving}>
+                Save Changes
+              </Button>
             </div>
           )}
 
@@ -83,31 +114,19 @@ export default function SettingsPage() {
               <div className="p-4 rounded-xl bg-amber-50 border border-amber-100 flex items-start gap-3">
                 <Security sx={{ color: '#d97706', fontSize: 20, mt: 0.2 }} />
                 <div>
-                  <p className="text-sm font-semibold text-amber-800">Change your default password</p>
-                  <p className="text-xs text-amber-700 mt-0.5">For production use, change credentials in <code>src/context/AuthContext.jsx</code></p>
+                  <p className="text-sm font-semibold text-amber-800">Keep your account secure</p>
+                  <p className="text-xs text-amber-700 mt-0.5">Use a strong password with at least 6 characters.</p>
                 </div>
               </div>
               <Divider />
               <div className="space-y-4">
-                <TextField fullWidth label="Current Password" type="password" size="small" />
-                <TextField fullWidth label="New Password" type="password" size="small" />
-                <TextField fullWidth label="Confirm New Password" type="password" size="small" />
+                <TextField fullWidth label="Current Password" type="password" size="small" value={passwordForm.currentPassword} onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })} />
+                <TextField fullWidth label="New Password" type="password" size="small" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })} />
+                <TextField fullWidth label="Confirm New Password" type="password" size="small" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })} />
               </div>
-              <div className="flex items-center justify-between py-3 border-t border-slate-100">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">Two-Factor Authentication</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Add an extra layer of security to your account</p>
-                </div>
-                <Switch />
-              </div>
-              <div className="flex items-center justify-between py-3 border-t border-slate-100">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">Session Timeout</p>
-                  <p className="text-xs text-slate-400 mt-0.5">Auto logout after 30 minutes of inactivity</p>
-                </div>
-                <Switch defaultChecked />
-              </div>
-              <Button variant="contained" startIcon={<Save />}>Update Password</Button>
+              <Button variant="contained" startIcon={saving ? <CircularProgress size={16} color="inherit" /> : <Save />} onClick={handlePasswordSave} disabled={saving || !passwordForm.currentPassword || !passwordForm.newPassword}>
+                Update Password
+              </Button>
             </div>
           )}
 
@@ -128,15 +147,25 @@ export default function SettingsPage() {
                       <p className="text-sm font-semibold text-slate-800">{n.label}</p>
                       <p className="text-xs text-slate-400 mt-0.5">{n.desc}</p>
                     </div>
-                    <Switch
-                      checked={notifications[n.key]}
-                      onChange={(e) => setNotifications((p) => ({ ...p, [n.key]: e.target.checked }))}
-                    />
+                    <Switch checked={notifications[n.key]} onChange={(e) => setNotifications((p) => ({ ...p, [n.key]: e.target.checked }))} />
                   </div>
                 ))}
               </div>
               <Button variant="contained" startIcon={<Save />}>Save Preferences</Button>
             </div>
+          )}
+
+          {active === 'admins' && (
+            user?.role === 'superadmin' ? (
+              <AdminManagement />
+            ) : (
+              <div className="space-y-4">
+                <h2 className="font-heading font-600 text-slate-900 text-lg">Manage Admins</h2>
+                <Alert severity="warning">
+                  Only the Master Admin can add or manage administrator accounts.
+                </Alert>
+              </div>
+            )
           )}
 
           {active === 'university' && (
@@ -151,13 +180,9 @@ export default function SettingsPage() {
                 <TextField fullWidth label="Contact Phone" defaultValue="+91 674 123 4567" size="small" />
                 <TextField fullWidth label="City" defaultValue="Bhubaneswar" size="small" />
                 <TextField fullWidth label="State" defaultValue="Odisha" size="small" />
-                <TextField fullWidth label="Pincode" defaultValue="751024" size="small" />
-                <TextField fullWidth label="Website" defaultValue="https://university.edu" size="small" />
               </div>
               <TextField fullWidth label="Address" defaultValue="Campus Road, Tech Park, Bhubaneswar" size="small" multiline rows={2} />
-              <div className="pt-2">
-                <Button variant="contained" startIcon={<Save />}>Save University Info</Button>
-              </div>
+              <Button variant="contained" startIcon={<Save />}>Save University Info</Button>
             </div>
           )}
 
@@ -168,10 +193,7 @@ export default function SettingsPage() {
                 <p className="text-sm font-semibold text-slate-800 mb-3">Theme</p>
                 <div className="flex gap-3">
                   {['Light', 'Dark', 'System'].map((t) => (
-                    <button key={t}
-                      className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${t === 'Light' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>
-                      {t}
-                    </button>
+                    <button key={t} className={`px-4 py-2 rounded-xl text-sm font-semibold border transition-all ${t === 'Light' ? 'border-primary-500 bg-primary-50 text-primary-700' : 'border-slate-200 text-slate-600 hover:border-slate-300'}`}>{t}</button>
                   ))}
                 </div>
               </div>
@@ -180,8 +202,7 @@ export default function SettingsPage() {
                 <p className="text-sm font-semibold text-slate-800 mb-3">Accent Color</p>
                 <div className="flex gap-3">
                   {['#4f46e5', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0891b2'].map((c) => (
-                    <button key={c} className="w-8 h-8 rounded-full border-2 border-white shadow-sm hover:scale-110 transition-transform"
-                      style={{ backgroundColor: c }} />
+                    <button key={c} className="w-8 h-8 rounded-full border-2 border-white shadow-sm hover:scale-110 transition-transform" style={{ backgroundColor: c }} />
                   ))}
                 </div>
               </div>

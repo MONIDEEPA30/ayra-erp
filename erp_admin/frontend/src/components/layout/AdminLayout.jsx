@@ -1,17 +1,18 @@
-import { useState } from 'react';
-import { Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
+import { useEffect, useMemo, useState } from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import api from '../../utils/api';
 import {
   Avatar, Badge, Tooltip, Menu, MenuItem, Divider, IconButton,
-  Drawer, useMediaQuery, useTheme,
+  Drawer, useMediaQuery, useTheme, ClickAwayListener, CircularProgress,
 } from '@mui/material';
 import {
   Dashboard, People, School, MenuBook, AccountBalance,
   Forum, Settings, Notifications, Search, Menu as MenuIcon,
-  Logout, Person, ChevronRight, Close, KeyboardArrowDown,
+  Logout, Person, ChevronRight, Close, KeyboardArrowDown, AdminPanelSettings,
 } from '@mui/icons-material';
 
-const navItems = [
+const baseNavItems = [
   { label: 'Dashboard', icon: Dashboard, path: '/dashboard' },
   { label: 'Students', icon: People, path: '/students' },
   { label: 'Teachers', icon: School, path: '/teachers' },
@@ -20,13 +21,16 @@ const navItems = [
   { label: 'Communication', icon: Forum, path: '/communication' },
 ];
 
+const adminNavItem = { label: 'My Admins', icon: AdminPanelSettings, path: '/my-admins' };
+
 const bottomItems = [
   { label: 'Settings', icon: Settings, path: '/settings' },
 ];
 
-function SidebarContent({ onClose }) {
+function SidebarContent({ onClose, user }) {
   const location = useLocation();
   const navigate = useNavigate();
+  const navItems = user?.role === 'superadmin' ? [...baseNavItems, adminNavItem] : baseNavItems;
 
   const handleNav = (path) => {
     navigate(path);
@@ -35,7 +39,6 @@ function SidebarContent({ onClose }) {
 
   return (
     <div className="flex flex-col h-full bg-white">
-      {/* Logo */}
       <div className="flex items-center justify-between px-5 py-5 border-b border-slate-100">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-primary-600 rounded-xl flex items-center justify-center shadow-md">
@@ -53,7 +56,6 @@ function SidebarContent({ onClose }) {
         )}
       </div>
 
-      {/* Nav */}
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
         <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest px-4 mb-3">Main Menu</p>
         {navItems.map((item) => {
@@ -91,13 +93,14 @@ function SidebarContent({ onClose }) {
         </div>
       </div>
 
-      {/* Bottom user info */}
       <div className="px-3 pb-4 border-t border-slate-100 pt-4">
         <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-slate-50">
-          <Avatar sx={{ width: 34, height: 34, bgcolor: '#4f46e5', fontSize: 14, fontWeight: 700 }}>A</Avatar>
+          <Avatar sx={{ width: 34, height: 34, bgcolor: '#4f46e5', fontSize: 14, fontWeight: 700 }}>
+            {user?.name?.charAt(0) || 'A'}
+          </Avatar>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-slate-800 truncate">Admin</p>
-            <p className="text-xs text-slate-400 truncate">admin@university.edu</p>
+            <p className="text-sm font-semibold text-slate-800 truncate">{user?.name || 'Admin'}</p>
+            <p className="text-xs text-slate-400 truncate">{user?.email || 'admin@university.edu'}</p>
           </div>
         </div>
       </div>
@@ -109,12 +112,14 @@ export default function AdminLayout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const muiTheme = useTheme();
-  const isMobile = useMediaQuery(muiTheme.breakpoints.down('lg'));
 
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState(null);
   const [notifAnchor, setNotifAnchor] = useState(null);
   const [searchVal, setSearchVal] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   const notifications = [
     { id: 1, title: 'Fee submission deadline', desc: 'Semester fee due in 3 days', time: '2h ago', unread: true },
@@ -125,27 +130,122 @@ export default function AdminLayout() {
 
   const unreadCount = notifications.filter((n) => n.unread).length;
 
+  const sectionTitles = {
+    students: 'Students',
+    teachers: 'Teachers',
+    courses: 'Academics',
+    announcements: 'Communication',
+    admins: 'My Admins',
+  };
+
+  useEffect(() => {
+    const query = searchVal.trim();
+
+    if (query.length < 2) {
+      setSearchResults([]);
+      setSearchOpen(false);
+      setSearchLoading(false);
+      return undefined;
+    }
+
+    const timeoutId = setTimeout(async () => {
+      setSearchLoading(true);
+      try {
+        const requests = [
+          api.get('/students', { params: { search: query, limit: 3 } }),
+          api.get('/teachers', { params: { search: query, limit: 3 } }),
+          api.get('/academics/courses', { params: { search: query, limit: 3 } }),
+          api.get('/communication/announcements', { params: { search: query, limit: 3 } }),
+        ];
+
+        if (user?.role === 'superadmin') {
+          requests.push(api.get('/admins', { params: { search: query, limit: 3, includeDeleted: true } }));
+        }
+
+        const responses = await Promise.all(requests);
+        const [studentsRes, teachersRes, coursesRes, announcementsRes, adminsRes] = responses;
+
+        const mapped = [
+          ...(studentsRes?.data?.data?.students || []).map((item) => ({
+            id: item._id,
+            section: 'students',
+            label: item.name,
+            subtitle: `${item.rollNo} • ${item.department}`,
+            path: '/students',
+          })),
+          ...(teachersRes?.data?.data?.teachers || []).map((item) => ({
+            id: item._id,
+            section: 'teachers',
+            label: item.name,
+            subtitle: `${item.facultyId} • ${item.department}`,
+            path: '/teachers',
+          })),
+          ...(coursesRes?.data?.data?.courses || []).map((item) => ({
+            id: item._id,
+            section: 'courses',
+            label: item.name,
+            subtitle: `${item.code} • ${item.department}`,
+            path: '/academics',
+          })),
+          ...(announcementsRes?.data?.data?.announcements || []).map((item) => ({
+            id: item._id,
+            section: 'announcements',
+            label: item.title,
+            subtitle: `${item.category} • ${item.status}`,
+            path: '/communication',
+          })),
+          ...((adminsRes?.data?.data?.admins || []).map((item) => ({
+            id: item._id,
+            section: 'admins',
+            label: item.name,
+            subtitle: `${item.username} • ${item.isDeleted ? 'Archived' : item.role}`,
+            path: '/my-admins',
+          }))),
+        ];
+
+        setSearchResults(mapped);
+        setSearchOpen(true);
+      } catch {
+        setSearchResults([]);
+        setSearchOpen(true);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [searchVal, user?.role]);
+
+  const groupedResults = useMemo(() => {
+    return searchResults.reduce((acc, item) => {
+      if (!acc[item.section]) acc[item.section] = [];
+      acc[item.section].push(item);
+      return acc;
+    }, {});
+  }, [searchResults]);
+
+  const handleResultClick = (item) => {
+    navigate(item.path);
+    setSearchOpen(false);
+    setSearchVal('');
+  };
+
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
-      {/* Desktop Sidebar */}
       <aside className="hidden lg:flex w-60 flex-shrink-0 flex-col shadow-sidebar border-r border-slate-100">
-        <SidebarContent />
+        <SidebarContent user={user} />
       </aside>
 
-      {/* Mobile Drawer */}
       <Drawer
         open={mobileOpen}
         onClose={() => setMobileOpen(false)}
         PaperProps={{ sx: { width: 240, border: 'none' } }}
       >
-        <SidebarContent onClose={() => setMobileOpen(false)} />
+        <SidebarContent onClose={() => setMobileOpen(false)} user={user} />
       </Drawer>
 
-      {/* Main */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Topbar */}
         <header className="bg-white border-b border-slate-100 px-4 lg:px-6 h-16 flex items-center gap-4 flex-shrink-0 shadow-sm">
-          {/* Mobile menu toggle */}
           <IconButton
             className="lg:hidden"
             onClick={() => setMobileOpen(true)}
@@ -154,22 +254,56 @@ export default function AdminLayout() {
             <MenuIcon />
           </IconButton>
 
-          {/* Search */}
-          <div className="flex-1 max-w-md">
-            <div className="relative flex items-center">
-              <Search sx={{ fontSize: 18, color: '#94a3b8', position: 'absolute', left: 10 }} />
-              <input
-                type="text"
-                value={searchVal}
-                onChange={(e) => setSearchVal(e.target.value)}
-                placeholder="Search students, teachers, records..."
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-transparent transition-all"
-              />
+          <ClickAwayListener onClickAway={() => setSearchOpen(false)}>
+            <div className="flex-1 max-w-xl relative">
+              <div className="relative flex items-center">
+                <Search sx={{ fontSize: 18, color: '#94a3b8', position: 'absolute', left: 10 }} />
+                <input
+                  type="text"
+                  value={searchVal}
+                  onFocus={() => searchResults.length > 0 && setSearchOpen(true)}
+                  onChange={(e) => setSearchVal(e.target.value)}
+                  placeholder="Global search across students, faculty, courses, announcements, admins..."
+                  className="w-full pl-9 pr-10 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-transparent transition-all"
+                />
+                {searchLoading && (
+                  <div className="absolute right-3">
+                    <CircularProgress size={16} />
+                  </div>
+                )}
+              </div>
+
+              {searchOpen && (
+                <div className="absolute top-[calc(100%+10px)] left-0 right-0 z-30 rounded-2xl border border-slate-200 bg-white shadow-2xl overflow-hidden">
+                  {Object.keys(groupedResults).length === 0 ? (
+                    <div className="px-4 py-4 text-sm text-slate-400">
+                      {searchVal.trim().length < 2 ? 'Type at least 2 characters to search.' : 'No matching records found.'}
+                    </div>
+                  ) : (
+                    Object.entries(groupedResults).map(([section, items]) => (
+                      <div key={section} className="border-b border-slate-100 last:border-b-0">
+                        <div className="px-4 py-2 bg-slate-50 text-[11px] font-semibold uppercase tracking-widest text-slate-400">
+                          {sectionTitles[section]}
+                        </div>
+                        {items.map((item) => (
+                          <button
+                            key={`${section}-${item.id}`}
+                            onClick={() => handleResultClick(item)}
+                            className="w-full text-left px-4 py-3 hover:bg-primary-50 transition-colors"
+                          >
+                            <p className="text-sm font-semibold text-slate-800">{item.label}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">{item.subtitle}</p>
+                          </button>
+                        ))}
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
-          </div>
+          </ClickAwayListener>
 
           <div className="flex items-center gap-2 ml-auto">
-            {/* Notifications */}
             <Tooltip title="Notifications">
               <IconButton onClick={(e) => setNotifAnchor(e.currentTarget)} size="small">
                 <Badge badgeContent={unreadCount} color="error" max={9}>
@@ -178,7 +312,6 @@ export default function AdminLayout() {
               </IconButton>
             </Tooltip>
 
-            {/* Profile */}
             <div
               className="flex items-center gap-2.5 cursor-pointer hover:bg-slate-50 rounded-xl px-2 py-1.5 transition-colors"
               onClick={(e) => setAnchorEl(e.currentTarget)}
@@ -195,13 +328,11 @@ export default function AdminLayout() {
           </div>
         </header>
 
-        {/* Page content */}
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
           <Outlet />
         </main>
       </div>
 
-      {/* Notification Menu */}
       <Menu
         anchorEl={notifAnchor}
         open={Boolean(notifAnchor)}
@@ -233,7 +364,6 @@ export default function AdminLayout() {
         </div>
       </Menu>
 
-      {/* Profile Menu */}
       <Menu
         anchorEl={anchorEl}
         open={Boolean(anchorEl)}
